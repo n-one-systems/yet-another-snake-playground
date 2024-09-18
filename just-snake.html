@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Snake Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #222;
+            color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+        #container {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 20px;
+        }
+        #instructions {
+            max-width: 300px;
+            margin-right: 20px;
+        }
+        #instructions h2 {
+            margin-top: 0;
+        }
+        #gameArea {
+            text-align: center;
+            position: relative;
+        }
+        #gameCanvas {
+            border: 1px solid #000;
+            background-color: #333;
+        }
+        #scoreboard {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+            font-size: 20px;
+        }
+        #scoreboard div {
+            margin: 0 20px;
+        }
+        #pauseOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 400px;
+            height: 400px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 48px;
+        }
+        a {
+            color: #0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="instructions">
+            <h2>How to Play</h2>
+            <ul>
+                <li>Use the <strong>Arrow Keys</strong> to move the snake.</li>
+                <li>Press <strong>'P'</strong> to pause or resume the game.</li>
+                <li>Press <strong>'X'</strong> to spawn a poisonous apple.</li>
+                <li>Press <strong>'S'</strong> to start or restart the game at any time.</li>
+            </ul>
+            <p>
+                <strong>Game Mechanics:</strong>
+            </p>
+            <ul>
+                <li>Eat the <span style="color: red;">red apples</span> to grow longer and increase your score.</li>
+                <li>Avoid the <span style="color: blue;">blue poisonous apples</span>; eating one ends the game.</li>
+                <li>If you don't eat an apple within the timer, you'll lose a point and a piece of your tail.</li>
+                <li>The timer decreases by 5 seconds for every 10 points gained, adding difficulty.</li>
+            </ul>
+            <p>Enjoy the game!</p>
+        </div>
+        <div id="gameArea">
+            <h1>Snake Game</h1>
+            <canvas id="gameCanvas" width="400" height="400"></canvas>
+            <div id="pauseOverlay">Paused</div>
+            <div id="scoreboard">
+                <div>Score: <span id="score">0</span></div>
+                <div>Timer: <span id="timer">30</span> seconds</div>
+                <div>Next Poison Apple: <span id="poisonTimer">--</span> seconds</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Canvas setup
+        var canvas = document.getElementById("gameCanvas");
+        var context = canvas.getContext("2d");
+
+        // Game variables
+        const tileCount = 20;
+        const tileSize = canvas.width / tileCount;
+        let snake;
+        let apple;
+        let poisonApple;
+        let velocity;
+        let score;
+        let timer;
+        let gameInterval;
+        let timerInterval;
+        let poisonAppleTimeout;
+        let poisonAppleTimer;
+        let poisonAppleInterval;
+        let poisonAppleTimeoutStartTime;
+        let poisonAppleTimeoutRemaining;
+        let poisonAppleTimerStartTime;
+        let poisonAppleTimerRemaining;
+        let isPaused = false;
+        let gameIsOver = true; // Game starts in an over state until 'S' is pressed
+        let timerReset;
+        let poisonAppleCountdown;
+        let poisonAppleCountdownInterval;
+
+        // Add the event listener here so it listens from the start
+        document.addEventListener("keydown", keyDown);
+
+        // Start or restart the game
+        function startGame() {
+            resetGameVariables();
+            placeApple();
+            gameInterval = setInterval(drawGame, 100);
+            timerInterval = setInterval(updateTimer, 1000);
+            poisonAppleCountdownInterval = setInterval(updatePoisonAppleCountdown, 1000);
+            schedulePoisonApple();
+            hideInstructions();
+        }
+
+        // Reset game variables
+        function resetGameVariables() {
+            snake = [{ x: 10, y: 10 }];
+            apple = { x: 5, y: 5 };
+            poisonApple = null;
+            velocity = { x: 0, y: 0 };
+            score = 0;
+            timerReset = 30;
+            timer = timerReset;
+            isPaused = false;
+            gameIsOver = false;
+            poisonAppleCountdown = "--";
+
+            // Clear any existing intervals and timeouts
+            clearInterval(gameInterval);
+            clearInterval(timerInterval);
+            clearInterval(poisonAppleCountdownInterval);
+            clearTimeout(poisonAppleTimeout);
+            clearTimeout(poisonAppleTimer);
+
+            // Reset timers
+            poisonAppleTimeout = null;
+            poisonAppleTimer = null;
+            poisonAppleTimeoutStartTime = null;
+            poisonAppleTimerStartTime = null;
+            poisonAppleTimeoutRemaining = null;
+            poisonAppleTimerRemaining = null;
+
+            // Update scoreboard
+            document.getElementById("score").innerText = score;
+            document.getElementById("timer").innerText = timer;
+            document.getElementById("poisonTimer").innerText = poisonAppleCountdown;
+
+            // Hide pause overlay
+            document.getElementById("pauseOverlay").style.display = "none";
+        }
+
+        // Draw the game
+        function drawGame() {
+            clearScreen();
+            if (gameIsOver) {
+                showInstructions();
+                return;
+            }
+            if (isPaused) {
+                drawSnake();
+                drawApple();
+                if (poisonApple) {
+                    drawPoisonApple();
+                }
+                // Show pause overlay
+                document.getElementById("pauseOverlay").style.display = "flex";
+                return;
+            } else {
+                // Hide pause overlay
+                document.getElementById("pauseOverlay").style.display = "none";
+            }
+            updateSnakePosition();
+            let result = isGameOver();
+            if (result) {
+                return;
+            }
+            drawApple();
+            drawSnake();
+            if (poisonApple) {
+                drawPoisonApple();
+            }
+            document.getElementById("score").innerText = score;
+        }
+
+        // Clear the canvas
+        function clearScreen() {
+            context.fillStyle = "#333";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Draw the snake
+        function drawSnake() {
+            context.fillStyle = "lime";
+            for (let i = 0; i < snake.length; i++) {
+                context.fillRect(
+                    snake[i].x * tileSize,
+                    snake[i].y * tileSize,
+                    tileSize - 2,
+                    tileSize - 2
+                );
+            }
+        }
+
+        // Update snake position
+        function updateSnakePosition() {
+            const head = { x: snake[0].x + velocity.x, y: snake[0].y + velocity.y };
+
+            // If velocity is zero, the snake hasn't started moving yet
+            if (velocity.x === 0 && velocity.y === 0) {
+                return;
+            }
+
+            // Wrap around the edges
+            if (head.x < 0) {
+                head.x = tileCount - 1;
+            }
+            if (head.x >= tileCount) {
+                head.x = 0;
+            }
+            if (head.y < 0) {
+                head.y = tileCount - 1;
+            }
+            if (head.y >= tileCount) {
+                head.y = 0;
+            }
+
+            snake.unshift(head);
+
+            // Remove tail if not eating
+            if (head.x === apple.x && head.y === apple.y) {
+                score++;
+                updateTimerReset(); // Update timer reset value based on snake length
+                timer = timerReset; // Reset timer
+                placeApple();
+            } else {
+                snake.pop();
+            }
+
+            // Check collision with poisonous apple
+            if (poisonApple && head.x === poisonApple.x && head.y === poisonApple.y) {
+                gameOver("You ate the poisonous apple! Game Over!");
+            }
+        }
+
+        // Draw the apple
+        function drawApple() {
+            context.fillStyle = "red";
+            context.fillRect(
+                apple.x * tileSize,
+                apple.y * tileSize,
+                tileSize - 2,
+                tileSize - 2
+            );
+        }
+
+        // Draw the poisonous apple
+        function drawPoisonApple() {
+            context.fillStyle = "blue";
+            context.fillRect(
+                poisonApple.x * tileSize,
+                poisonApple.y * tileSize,
+                tileSize - 2,
+                tileSize - 2
+            );
+        }
+
+        // Place a new apple
+        function placeApple() {
+            apple.x = Math.floor(Math.random() * tileCount);
+            apple.y = Math.floor(Math.random() * tileCount);
+
+            // Make sure apple doesn't appear on the snake or the poisonous apple
+            while (isAppleOnSnake(apple) || (poisonApple && apple.x === poisonApple.x && apple.y === poisonApple.y)) {
+                apple.x = Math.floor(Math.random() * tileCount);
+                apple.y = Math.floor(Math.random() * tileCount);
+            }
+        }
+
+        // Check if an apple is on the snake
+        function isAppleOnSnake(apple) {
+            for (let i = 0; i < snake.length; i++) {
+                if (snake[i].x === apple.x && snake[i].y === apple.y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Handle key presses
+        function keyDown(event) {
+            if (event.key === 'p' || event.key === 'P') {
+                togglePauseGame();
+                return;
+            }
+            if (event.key === 'x' || event.key === 'X') {
+                if (!poisonApple && !isPaused && !gameIsOver) {
+                    spawnPoisonApple();
+                    // Clear the scheduled poison apple timeout and reschedule
+                    clearTimeout(poisonAppleTimeout);
+                    schedulePoisonApple();
+                }
+                return;
+            }
+            if (event.key === 's' || event.key === 'S') {
+                if (gameIsOver) {
+                    startGame(); // Start a new game
+                } else {
+                    // Restart the game
+                    startGame();
+                }
+                return;
+            }
+            if (isPaused || gameIsOver) {
+                return;
+            }
+            // Prevent reverse gear
+            if (event.keyCode == 37 && velocity.x != 1) {
+                velocity = { x: -1, y: 0 }; // Left arrow
+            }
+            if (event.keyCode == 38 && velocity.y != 1) {
+                velocity = { x: 0, y: -1 }; // Up arrow
+            }
+            if (event.keyCode == 39 && velocity.x != -1) {
+                velocity = { x: 1, y: 0 }; // Right arrow
+            }
+            if (event.keyCode == 40 && velocity.y != -1) {
+                velocity = { x: 0, y: 1 }; // Down arrow
+            }
+        }
+
+        // Toggle pause
+        function togglePauseGame() {
+            if (gameIsOver) {
+                return; // Do nothing if the game is over
+            }
+            if (isPaused) {
+                // Resume the game
+                gameInterval = setInterval(drawGame, 100);
+                timerInterval = setInterval(updateTimer, 1000);
+                poisonAppleCountdownInterval = setInterval(updatePoisonAppleCountdown, 1000);
+                // Resume poison apple timeout
+                if (poisonAppleTimeoutRemaining > 0) {
+                    poisonAppleTimeout = setTimeout(spawnPoisonApple, poisonAppleTimeoutRemaining);
+                    poisonAppleTimeoutStartTime = Date.now();
+                }
+                // Resume poison apple timer
+                if (poisonAppleTimerRemaining > 0 && poisonApple) {
+                    poisonAppleTimer = setTimeout(removePoisonApple, poisonAppleTimerRemaining);
+                    poisonAppleTimerStartTime = Date.now();
+                }
+                isPaused = false;
+                hideInstructions();
+            } else {
+                // Pause the game
+                clearInterval(gameInterval);
+                clearInterval(timerInterval);
+                clearInterval(poisonAppleCountdownInterval);
+                // Pause poison apple timeout
+                if (poisonAppleTimeout) {
+                    clearTimeout(poisonAppleTimeout);
+                    poisonAppleTimeoutRemaining = getTimeRemaining(poisonAppleTimeoutStartTime, poisonAppleInterval);
+                }
+                // Pause poison apple timer
+                if (poisonAppleTimer) {
+                    clearTimeout(poisonAppleTimer);
+                    poisonAppleTimerRemaining = getTimeRemaining(poisonAppleTimerStartTime, 10000);
+                }
+                isPaused = true;
+                showInstructions();
+            }
+        }
+
+        // Get remaining time for timeouts
+        function getTimeRemaining(startTime, totalDuration) {
+            if (startTime) {
+                const elapsed = Date.now() - startTime;
+                return Math.max(totalDuration - elapsed, 0);
+            } else {
+                return 0;
+            }
+        }
+
+        // Check for game over
+        function isGameOver() {
+            let gameOver = false;
+
+            // Check collision with self
+            for (let i = 1; i < snake.length; i++) {
+                if (snake[0].x === snake[i].x && snake[0].y === snake[i].y) {
+                    gameOver = true;
+                    break;
+                }
+            }
+
+            if (gameOver) {
+                gameOverAlert("You collided with yourself! Game Over!");
+            }
+            return gameOver;
+        }
+
+        function gameOverAlert(message) {
+            clearInterval(gameInterval);
+            clearInterval(timerInterval);
+            clearInterval(poisonAppleCountdownInterval);
+            clearTimeout(poisonAppleTimeout);
+            clearTimeout(poisonAppleTimer);
+            gameIsOver = true; // Set the game over flag
+            showInstructions();
+            alert(message);
+        }
+
+        function gameOver(message) {
+            gameOverAlert(message);
+        }
+
+        // Update the timer reset value based on snake length
+        function updateTimerReset() {
+            // Reduce timer by 5 seconds for every 10 pieces of length gained
+            let lengthFactor = Math.floor((snake.length - 1) / 10);
+            timerReset = Math.max(30 - 5 * lengthFactor, 5);
+        }
+
+        // Update the timer
+        function updateTimer() {
+            if (isPaused || gameIsOver) {
+                return;
+            }
+            timer--;
+            if (timer <= 0) {
+                updateTimerReset(); // Ensure timerReset is updated if length has changed
+                timer = timerReset;
+                // Lose a point and remove a tail piece
+                if (score > 0) {
+                    score--;
+                }
+                if (snake.length > 1) {
+                    snake.pop();
+                } else {
+                    gameOver("You ran out of time! Game Over!");
+                }
+            }
+            document.getElementById("timer").innerText = timer;
+        }
+
+        // Schedule the poisonous apple
+        function schedulePoisonApple() {
+            poisonAppleInterval = Math.floor(Math.random() * 60000) + 18000; // 180,000 to 240,000 ms
+            poisonAppleTimeout = setTimeout(spawnPoisonApple, poisonAppleInterval);
+            poisonAppleTimeoutStartTime = Date.now();
+            poisonAppleCountdown = Math.ceil(poisonAppleInterval / 1000);
+            document.getElementById("poisonTimer").innerText = poisonAppleCountdown;
+        }
+
+        // Update the poisonous apple countdown
+        function updatePoisonAppleCountdown() {
+            if (isPaused || gameIsOver) {
+                return;
+            }
+            if (poisonAppleCountdown === "--") {
+                return;
+            }
+            poisonAppleCountdown--;
+            if (poisonAppleCountdown <= 0) {
+                poisonAppleCountdown = "--";
+            }
+            document.getElementById("poisonTimer").innerText = poisonAppleCountdown;
+        }
+
+        // Spawn the poisonous apple
+        function spawnPoisonApple() {
+            poisonApple = {
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount)
+            };
+            // Ensure it doesn't appear on the snake or the normal apple
+            while (isAppleOnSnake(poisonApple) || (apple.x === poisonApple.x && apple.y === poisonApple.y)) {
+                poisonApple.x = Math.floor(Math.random() * tileCount);
+                poisonApple.y = Math.floor(Math.random() * tileCount);
+            }
+            poisonAppleTimer = setTimeout(removePoisonApple, 10000); // Disappear after 10 seconds
+            poisonAppleTimerStartTime = Date.now();
+            poisonAppleCountdown = "--";
+            document.getElementById("poisonTimer").innerText = poisonAppleCountdown;
+        }
+
+        // Remove the poisonous apple
+        function removePoisonApple() {
+            poisonApple = null;
+            schedulePoisonApple();
+        }
+
+        // Initialize the game in a waiting state
+        function initGame() {
+            gameIsOver = true;
+            isPaused = true;
+            clearScreen();
+            context.fillStyle = "white";
+            context.font = "20px Arial";
+            context.textAlign = "center";
+            context.fillText("Press 'S' to Start the Game", canvas.width / 2, canvas.height / 2);
+            showInstructions();
+        }
+
+        // Show instructions
+        function showInstructions() {
+            document.getElementById("instructions").style.display = "block";
+        }
+
+        // Hide instructions
+        function hideInstructions() {
+            document.getElementById("instructions").style.display = "none";
+        }
+
+        // Start in an initial state
+        initGame();
+    </script>
+</body>
+</html>
